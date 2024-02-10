@@ -1,0 +1,217 @@
+create database Ventas
+
+use ventas
+
+
+-----Aca es el bloque para poder  realizar este proceso en el cual
+--crear la base de datos dinamicas
+
+-- Crear tabla Ventas
+CREATE TABLE Ventas (
+    VentaID INT PRIMARY KEY,
+    ProductoID INT,
+    ProductoNombre VARCHAR(100),
+    Categoria VARCHAR(50),
+    FechaVenta DATE,
+    Unidades INT,
+    PrecioUnitario DECIMAL(10, 2),
+    CostoTotalPorUnidad DECIMAL(10, 2),
+    ClienteID INT,
+    ClienteNombre VARCHAR(100),
+    Ciudad VARCHAR(50),
+    Estado VARCHAR(50),
+    Pais VARCHAR(50)
+);
+
+-- Generar 60,000 registros de ventas
+DECLARE @Counter INT = 1;
+
+WHILE @Counter <= 60000
+BEGIN
+    INSERT INTO Ventas (VentaID, ProductoID, ProductoNombre, Categoria, FechaVenta, Unidades, PrecioUnitario, 
+	CostoTotalPorUnidad,ClienteID, ClienteNombre, Ciudad, Estado, Pais)
+    VALUES (
+        @Counter,
+        ABS(CHECKSUM(NEWID())) % 1000 + 1, -- ProductoID
+        'Producto' + CAST(ABS(CHECKSUM(NEWID())) % 100 AS VARCHAR(100)), -- ProductoNombre
+        CASE ABS(CHECKSUM(NEWID())) % 3
+            WHEN 0 THEN 'Ropa'
+            WHEN 1 THEN 'Calzado'
+            ELSE 'Accesorios'
+        END, -- Categoria
+        DATEADD(DAY, -ABS(CHECKSUM(NEWID())) % 365, GETDATE()), -- FechaVenta (último año, por que es de muestra)
+        ABS(CHECKSUM(NEWID())) % 10 + 1, -- Unidades
+        CAST(ABS(CHECKSUM(NEWID())) % 100 + 10 AS DECIMAL(10, 2)), -- PrecioUnitario
+        CAST(ABS(CHECKSUM(NEWID())) % 100 + 5 AS DECIMAL(10, 2)), -- CostoTotalPorUnidad (costo total por unidad generado dinamicamente ojo)
+        ABS(CHECKSUM(NEWID())) % 10000 + 1, -- ClienteID
+        'Cliente' + CAST(ABS(CHECKSUM(NEWID())) % 10000 AS VARCHAR(100)), -- ClienteNombre
+        'Ciudad' + CAST(ABS(CHECKSUM(NEWID())) % 100 AS VARCHAR(50)), -- Ciudad
+        'Estado' + CAST(ABS(CHECKSUM(NEWID())) % 10 AS VARCHAR(50)), -- Estado
+        'País' + CAST(ABS(CHECKSUM(NEWID())) % 5 AS VARCHAR(50)) -- País
+    );
+
+    SET @Counter = @Counter + 1;
+END;
+
+
+
+DECLARE @Command NVARCHAR(1000);
+DECLARE @FilePath NVARCHAR(500) = 'C:\prueba\archivo.csv';
+
+
+-- Crear el archivo CSV vacío
+SET @Command = 'echo "VentaID,ProductoID,ProductoNombre,Categoria,FechaVenta,Unidades,PrecioUnitario,CostoTotalPorUnidad,ClienteID,ClienteNombre,Ciudad,Estado,Pais" > "' + @FilePath + '"';
+EXEC xp_cmdshell @Command;
+
+-- Crear el archivo CSV vacío
+SET @Command = 'echo. > "' + @FilePath + '"';
+EXEC xp_cmdshell @Command;
+
+-- Crear una tabla temporal para almacenar los datos
+CREATE TABLE #TempCSVData (
+    Line NVARCHAR(MAX)
+);
+
+-- Insertar los datos de todos los registros en la tabla temporal
+INSERT INTO #TempCSVData (Line)
+SELECT 
+    CONCAT(
+        [VentaID], ',', 
+        [ProductoID], ',', 
+        [ProductoNombre], ',', 
+        [Categoria], ',', 
+        CONVERT(NVARCHAR(MAX), [FechaVenta], 23), ',', 
+        [Unidades], ',', 
+        [PrecioUnitario], ',', 
+        [CostoTotalPorUnidad], ',', 
+        [ClienteID], ',', 
+        [ClienteNombre], ',', 
+        [Ciudad], ',', 
+        [Estado], ',', 
+      REPLACE([Pais], 'í', 'i')
+    ) AS Line -- Alias para la columna
+FROM [dbo].[Ventas]
+ORDER BY [VentaID]; -- Asegurarse de un orden consistente para la salida
+
+-- Escribir los datos en el archivo CSV línea por línea
+DECLARE @Line NVARCHAR(MAX);
+
+DECLARE CSV_Cursor CURSOR FOR
+SELECT Line FROM #TempCSVData;
+
+OPEN CSV_Cursor;
+FETCH NEXT FROM CSV_Cursor INTO @Line;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @Command = 'echo ' + @Line + ' >> "' + @FilePath + '"';
+    EXEC xp_cmdshell @Command;
+    FETCH NEXT FROM CSV_Cursor INTO @Line;
+END
+
+CLOSE CSV_Cursor;
+DEALLOCATE CSV_Cursor;
+
+-- Eliminar la tabla temporal
+DROP TABLE #TempCSVData;
+
+
+--activa permisos
+sp_configure 'show advanced options', 1;
+RECONFIGURE;
+sp_configure 'xp_cmdshell', 1;
+RECONFIGURE;
+
+EXEC sp_configure 'xp_cmdshell';
+
+RECONFIGURE;
+
+
+--longitud maxima de cada columna, es el proceso en el cual manejamos el control de cada columna 
+
+SELECT 
+    'VentaID' AS Campo, MAX(LEN(VentaID)) AS MaxLen FROM Ventas UNION ALL
+    SELECT 'ProductoID', MAX(LEN(ProductoID)) FROM Ventas UNION ALL
+    SELECT 'ProductoNombre', MAX(LEN(ProductoNombre)) FROM Ventas UNION ALL
+    SELECT 'Categoria', MAX(LEN(Categoria)) FROM Ventas UNION ALL
+    SELECT 'FechaVenta', MAX(LEN(FechaVenta)) FROM Ventas UNION ALL
+    SELECT 'Unidades', MAX(LEN(Unidades)) FROM Ventas UNION ALL
+    SELECT 'PrecioUnitario', MAX(LEN(PrecioUnitario)) FROM Ventas UNION ALL
+    SELECT 'CostoTotalPorUnidad', MAX(LEN(CostoTotalPorUnidad)) FROM Ventas UNION ALL
+    SELECT 'ClienteID', MAX(LEN(ClienteID)) FROM Ventas UNION ALL
+    SELECT 'ClienteNombre', MAX(LEN(ClienteNombre)) FROM Ventas UNION ALL
+    SELECT 'Ciudad', MAX(LEN(Ciudad)) FROM Ventas UNION ALL
+    SELECT 'Estado', MAX(LEN(Estado)) FROM Ventas UNION ALL
+    SELECT 'Pais', MAX(LEN(Pais)) FROM Ventas;
+
+------Esta parte es para poder relizar los procesos en los cuales manejamos cada uno de estos
+------Casos y soluciones para poder realizar las tablas de entidad identificada
+
+
+
+CREATE TABLE Producto (
+    ProductoID INT,
+    ProductoNombre VARCHAR(10),
+    Categoria VARCHAR(10)
+);
+
+
+CREATE TABLE Cliente (
+    ClienteID INT ,
+    ClienteNombre VARCHAR(11),
+    Ciudad VARCHAR(8),
+    Estado VARCHAR(7),
+    Pais VARCHAR(5)
+);
+
+CREATE TABLE Venta (
+    VentaID INT ,
+    ProductoID INT,
+    FechaVenta DATE,
+    Unidades INT,
+    PrecioUnitario DECIMAL(10, 2),
+    CostoTotalPorUnidad DECIMAL(10, 2),
+    ClienteID INT,
+);
+
+select * from Producto
+
+
+--procedemos a crear las consultas de anexar
+-- Insertar datos en la tabla Producto
+INSERT INTO Producto (ProductoID, ProductoNombre, Categoria)
+SELECT DISTINCT 
+    ProductoID, 
+    ProductoNombre, 
+    Categoria
+FROM 
+    Ventas;
+
+-- Insertar datos en la tabla Cliente
+INSERT INTO Cliente (ClienteID, ClienteNombre, Ciudad, Estado, Pais)
+SELECT DISTINCT 
+    ClienteID, 
+    ClienteNombre, 
+    Ciudad, 
+    Estado, 
+    Pais
+FROM 
+    Ventas;
+
+-- Insertar datos en la tabla Venta
+INSERT INTO Venta (VentaID, ProductoID, FechaVenta, Unidades, PrecioUnitario, CostoTotalPorUnidad, ClienteID)
+SELECT 
+    VentaID, 
+    ProductoID, 
+    FechaVenta, 
+    Unidades, 
+    PrecioUnitario, 
+    CostoTotalPorUnidad, 
+    ClienteID
+FROM 
+    Ventas;
+
+
+
+
+
